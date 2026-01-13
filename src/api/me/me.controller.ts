@@ -7,6 +7,8 @@ export class MeController {
     return {
       firstName: 'Brian',
       lastName: 'McCullough',
+      tenant: process.env.AD_TENANT_NAME,
+      clientid: process.env.AD_CLIENT_ID,
     };
   }
 }
