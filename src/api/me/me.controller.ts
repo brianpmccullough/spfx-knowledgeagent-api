@@ -1,34 +1,16 @@
-import {
-  Controller,
-  Get,
-  Headers,
-  Query,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import { MeService } from './me.service';
+import { AzureADGuard } from 'src/auth/azure-ad.guard';
+import { AuthenticatedUser } from 'src/auth/authenticateduser';
+import { CurrentUser } from 'src/auth/user.decorator';
 
 @Controller('api/me')
+@UseGuards(AzureADGuard)
 export class MeController {
   constructor(private readonly meService: MeService) {}
 
   @Get()
-  getMe(
-    @Headers('authorization') authHeader: string,
-    @Query('bypassauth') bypassAuth: string,
-  ) {
-    if (bypassAuth === 'true') {
-      return {
-        firstName: 'Brian',
-        lastName: 'McCullough',
-        email: 'brian@test.com',
-      };
-    }
-
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing or invalid token');
-    }
-
-    const token = authHeader.split(' ')[1];
-    return this.meService.getMe(token);
+  getMe(@CurrentUser() user: AuthenticatedUser) {
+    return this.meService.getMe(user.token);
   }
 }
