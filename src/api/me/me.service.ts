@@ -36,12 +36,30 @@ export class MeService {
       },
     });
 
-    const user = await graphClient.api('/me').get();
+    const user = await graphClient
+      .api('/me')
+      .select(
+        [
+          'id',
+          'displayName',
+          'givenName',
+          'surname',
+          'userPrincipalName',
+          'mail',
+          'jobTitle',
+          'department',
+          'companyName',
+          'officeLocation',
+          'mobilePhone',
+          'businessPhones',
+          'preferredLanguage',
+          'city',
+          'state',
+          'country',
+        ].join(','),
+      )
+      .get();
 
-    return {
-      firstName: user.givenName,
-      lastName: user.surname,
-      email: user.mail,
-    };
+    return user;
   }
 }
