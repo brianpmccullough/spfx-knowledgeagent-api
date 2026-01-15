@@ -11,7 +11,7 @@ export class ConfigurationController {
   getConfiguration() {
     return {
       configuration: this.configService.configuration,
-      secrets: this.configService.secrets,
+      // secrets: this.configService.secrets,
     };
   }
 }

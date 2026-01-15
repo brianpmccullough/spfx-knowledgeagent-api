@@ -9,7 +9,7 @@ export class MeService {
 
   constructor(private readonly configurationService: ConfigurationService) {
     const { configuration, secrets } = this.configurationService;
-    console.log(configuration);
+    //console.log(configuration);
     //console.log(secrets);
     this.msalClient = new ConfidentialClientApplication({
       auth: {
