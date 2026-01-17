@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { MeModule } from './api/me/me.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './api/chat/chat.module';
+import { SharedServicesModule } from './api/shared-services/shared-services.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ChatModule } from './api/chat/chat.module';
       isGlobal: true,
     }),
     MeModule,
+    SharedServicesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

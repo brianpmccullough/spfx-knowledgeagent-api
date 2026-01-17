@@ -3,7 +3,12 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ChatContext {
+  siteUrl: string;
+}
+
 export interface ChatRequest {
+  context: ChatContext;
   messages: ChatMessage[];
 }
 

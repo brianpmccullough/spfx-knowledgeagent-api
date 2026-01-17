@@ -7,5 +7,6 @@ import { ConfigurationModule } from '../config/configuration.module';
   controllers: [MeController],
   imports: [ConfigurationModule],
   providers: [MeService],
+  exports: [MeService],
 })
 export class MeModule {}

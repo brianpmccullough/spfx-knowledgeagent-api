@@ -1,16 +1,21 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
+import { AzureADGuard } from '../../auth/azure-ad.guard';
+import { CurrentUser } from '../../auth/user.decorator';
+import { AuthenticatedUser } from '../../auth/authenticateduser';
 import { MeService } from './me.service';
-import { AzureADGuard } from 'src/auth/azure-ad.guard';
-import { AuthenticatedUser } from 'src/auth/authenticateduser';
-import { CurrentUser } from 'src/auth/user.decorator';
+import { OboGraphService } from '../shared-services/obo-graph.service';
 
 @Controller('api/me')
 @UseGuards(AzureADGuard)
 export class MeController {
-  constructor(private readonly meService: MeService) {}
+  constructor(
+    private readonly meService: MeService,
+    private readonly oboGraphService: OboGraphService,
+  ) {}
 
   @Get()
-  getMe(@CurrentUser() user: AuthenticatedUser) {
-    return this.meService.getMe(user.token);
+  async getMe(@CurrentUser() user: AuthenticatedUser) {
+    const graphClient = await this.oboGraphService.getGraphClient(user.token);
+    return this.meService.getProfile(graphClient);
   }
 }

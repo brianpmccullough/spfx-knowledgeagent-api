@@ -1,65 +1,60 @@
 import { Injectable } from '@nestjs/common';
-import { ConfidentialClientApplication } from '@azure/msal-node';
 import { Client } from '@microsoft/microsoft-graph-client';
-import { ConfigurationService } from '../config/configuration.service';
+import { UserProfile } from '../models/user-profile';
 
 @Injectable()
 export class MeService {
-  private msalClient: ConfidentialClientApplication;
-
-  constructor(private readonly configurationService: ConfigurationService) {
-    const { configuration, secrets } = this.configurationService;
-    //console.log(configuration);
-    //console.log(secrets);
-    this.msalClient = new ConfidentialClientApplication({
-      auth: {
-        clientId: configuration.AD_CLIENT_ID,
-        clientSecret: secrets.AD_CLIENT_SECRET,
-        authority: `https://login.microsoftonline.com/${configuration.AD_TENANT_ID}`,
-      },
-    });
-  }
-
-  async getMe(userToken: string) {
-    // Exchange SPFx token for Graph token (OBO flow)
-    const oboRequest = {
-      oboAssertion: userToken,
-      scopes: ['https://graph.microsoft.com/User.Read'],
-    };
-
-    const tokenResponse =
-      await this.msalClient.acquireTokenOnBehalfOf(oboRequest);
-
-    const graphClient = Client.init({
-      authProvider: (done) => {
-        done(null, tokenResponse.accessToken);
-      },
-    });
-
+  async getProfile(graphClient: Client): Promise<UserProfile> {
     const user = await graphClient
       .api('/me')
-      .select(
-        [
-          'id',
-          'displayName',
-          'givenName',
-          'surname',
-          'userPrincipalName',
-          'mail',
-          'jobTitle',
-          'department',
-          'companyName',
-          'officeLocation',
-          'mobilePhone',
-          'businessPhones',
-          'preferredLanguage',
-          'city',
-          'state',
-          'country',
-        ].join(','),
-      )
+      .select([
+        'displayName',
+        'givenName',
+        'surname',
+        'mail',
+        'userPrincipalName',
+        'jobTitle',
+        'department',
+        'companyName',
+        'officeLocation',
+        'city',
+        'state',
+        'country',
+        'mobilePhone',
+        'businessPhones',
+        'employeeHireDate',
+      ])
       .get();
 
-    return user;
+    let manager = null;
+    try {
+      const managerData = await graphClient
+        .api('/me/manager')
+        .select(['displayName', 'mail', 'jobTitle'])
+        .get();
+      manager = {
+        name: managerData.displayName,
+        email: managerData.mail,
+        jobTitle: managerData.jobTitle,
+      };
+    } catch {}
+
+    return {
+      name: user.displayName,
+      firstName: user.givenName,
+      lastName: user.surname,
+      email: user.mail || user.userPrincipalName,
+      jobTitle: user.jobTitle || null,
+      department: user.department || null,
+      company: user.companyName || null,
+      office: user.officeLocation || null,
+      city: user.city || null,
+      state: user.state || null,
+      country: user.country || null,
+      mobile: user.mobilePhone || null,
+      phone: user.businessPhones?.[0] || null,
+      hireDate: user.employeeHireDate || null,
+      manager,
+    };
   }
 }
