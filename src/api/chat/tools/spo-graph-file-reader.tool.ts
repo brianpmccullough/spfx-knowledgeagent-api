@@ -1,12 +1,21 @@
-import { Tool } from '@langchain/core/tools';
+import { StructuredTool } from '@langchain/core/tools';
+import { z } from 'zod/v3';
 import { Client } from '@microsoft/microsoft-graph-client';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import mammoth from 'mammoth';
 
-export class GraphFileReaderTool extends Tool {
+const FileReaderSchema = z.object({
+  driveId: z.string().describe('The drive ID from the search results'),
+  itemId: z.string().describe('The item ID from the search results'),
+  name: z.string().describe('The filename from the search results'),
+});
+
+export class GraphFileReaderTool extends StructuredTool {
   name = 'read_file_content';
-  description =
-    'Read the content of a SharePoint document (.doc, .docx, or .pdf) or page (.aspx). Use this when you need to answer questions about what a specific document contains. Input must be the full webUrl of the document.';
+  description = `Read the content of a SharePoint document (.doc, .docx, or .pdf).
+    Use this when you need to answer questions about what a specific document contains.
+    Pass the driveId, itemId, and name from the search results.`;
+  schema = FileReaderSchema;
 
   private graphClient: Client;
 
@@ -15,55 +24,20 @@ export class GraphFileReaderTool extends Tool {
     this.graphClient = graphClient;
   }
 
-  async _call(webUrl: string): Promise<string> {
+  async _call(input: z.infer<typeof FileReaderSchema>): Promise<string> {
     try {
-      const url = new URL(webUrl);
-      const pathParts = url.pathname.split('/');
-      const sitesIndex = pathParts.indexOf('sites');
+      console.log('File reader input:', input);
 
-      if (sitesIndex === -1) {
-        return 'Invalid SharePoint URL - could not find site path';
-      }
+      const { driveId, itemId, name } = input;
 
-      const sitePath = pathParts.slice(0, sitesIndex + 2).join('/');
-
-      // Get site ID
-      const site = await this.graphClient
-        .api(`/sites/${url.hostname}:${sitePath}`)
-        .get();
-
-      // Determine file type from URL
-      const extension = this.getExtension(webUrl);
-
-      if (extension === 'aspx') {
-        return await this.readSharePointPage(site.id, webUrl, pathParts);
-      }
-
-      // Use search to find the file by path
-      const searchResponse = await this.graphClient.api('/search/query').post({
-        requests: [
-          {
-            entityTypes: ['driveItem'],
-            query: { queryString: `path:"${webUrl}"` },
-            from: 0,
-            size: 1,
-          },
-        ],
-      });
-
-      const hits = searchResponse.value?.[0]?.hitsContainers?.[0]?.hits;
-      if (!hits || hits.length === 0) {
-        return `File not found: ${webUrl}`;
-      }
-      const driveItem = hits[0].resource;
-      console.log(driveItem);
+      const extension = this.getExtension(name);
 
       if (extension === 'pdf') {
-        return await this.readPdf(site.id, driveItem);
+        return await this.readPdf(driveId, itemId, name);
       }
 
       if (['docx', 'doc'].includes(extension)) {
-        return await this.readWord(site.id, driveItem);
+        return await this.readWord(driveId, itemId, name);
       }
 
       return `Unsupported file type: ${extension}`;
@@ -72,16 +46,15 @@ export class GraphFileReaderTool extends Tool {
     }
   }
 
-  private getExtension(webUrl: string): string {
-    const path = new URL(webUrl).pathname.toLowerCase();
-    const match = path.match(/\.([a-z0-9]+)$/);
+  private getExtension(filename: string): string {
+    const match = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
     return match ? match[1] : '';
   }
 
-  private async readPdf(siteId: string, driveItem: any): Promise<string> {
+  private async readPdf(driveId: string, itemId: string, name: string): Promise<string> {
     try {
       const response = await this.graphClient
-        .api(`/sites/${siteId}/drive/items/${driveItem.id}/content`)
+        .api(`/drives/${driveId}/items/${itemId}/content`)
         .responseType('arraybuffer' as any)
         .get();
 
@@ -96,24 +69,24 @@ export class GraphFileReaderTool extends Tool {
         text += pageText + '\n';
       }
 
-      return this.formatContent(driveItem.name, text);
+      return this.formatContent(name, text);
     } catch (error) {
       console.log(`Failed to read PDF: ${error.message}`);
       return `Failed to read PDF: ${error.message}`;
     }
   }
 
-  private async readWord(siteId: string, driveItem: any): Promise<string> {
+  private async readWord(driveId: string, itemId: string, name: string): Promise<string> {
     try {
       const response = await this.graphClient
-        .api(`/sites/${siteId}/drive/items/${driveItem.id}/content`)
+        .api(`/drives/${driveId}/items/${itemId}/content`)
         .responseType('arraybuffer' as any)
         .get();
 
       const buffer = Buffer.from(response);
       const result = await mammoth.extractRawText({ buffer });
 
-      return this.formatContent(driveItem.name, result.value);
+      return this.formatContent(name, result.value);
     } catch (error) {
       console.log(`Failed to read Word document: ${error.message}`);
       return `Failed to read Word document: ${error.message}`;
@@ -171,11 +144,7 @@ export class GraphFileReaderTool extends Tool {
       .trim();
   }
 
-  private formatContent(
-    name: string,
-    content: string,
-    maxLength = 8000,
-  ): string {
+  private formatContent(name: string, content: string, maxLength = 8000): string {
     const trimmedContent =
       content.length > maxLength
         ? content.substring(0, maxLength) + '\n\n[Content truncated]'

@@ -16,7 +16,8 @@ export class GraphMeTool extends Tool {
     this.meService = meService;
   }
 
-  async _call(): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async _call(_input: string): Promise<string> {
     try {
       const profile = await this.meService.getProfile(this.graphClient);
       return JSON.stringify(profile, null, 2);

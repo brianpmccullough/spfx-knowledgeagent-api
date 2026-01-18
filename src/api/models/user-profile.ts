@@ -13,6 +13,7 @@ export interface UserProfile {
   mobile: string | null;
   phone: string | null;
   hireDate: string | null;
+  yearsOfService: number | null;
   manager: {
     name: string;
     email: string;

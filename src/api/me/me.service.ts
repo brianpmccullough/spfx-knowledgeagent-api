@@ -54,6 +54,12 @@ export class MeService {
       mobile: user.mobilePhone || null,
       phone: user.businessPhones?.[0] || null,
       hireDate: user.employeeHireDate || null,
+      yearsOfService: user.employeeHireDate
+        ? Math.floor(
+            (Date.now() - new Date(user.employeeHireDate).getTime()) /
+              (365.25 * 24 * 60 * 60 * 1000),
+          )
+        : null,
       manager,
     };
   }

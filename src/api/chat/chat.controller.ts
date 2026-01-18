@@ -15,11 +15,7 @@ export class ChatController {
     @Body() request: ChatRequest,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ChatResponse> {
-    const messages = await this.chatService.chat(
-      request.messages,
-      user,
-      request.context,
-    );
+    const messages = await this.chatService.chat(request.messages, user, request.context);
     return {
       response: messages[messages.length - 1].content,
       messages,
