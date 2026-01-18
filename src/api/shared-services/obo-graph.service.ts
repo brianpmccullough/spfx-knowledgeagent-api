@@ -25,8 +25,7 @@ export class OboGraphService {
       scopes: ['https://graph.microsoft.com/.default'],
     };
 
-    const tokenResponse =
-      await this.msalClient.acquireTokenOnBehalfOf(oboRequest);
+    const tokenResponse = await this.msalClient.acquireTokenOnBehalfOf(oboRequest);
 
     return Client.init({
       authProvider: (done) => {

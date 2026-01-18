@@ -6,6 +6,7 @@ import { MeModule } from './api/me/me.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './api/chat/chat.module';
 import { SharedServicesModule } from './api/shared-services/shared-services.module';
+import { KnowledgeIndexerModule } from './api/knowledge-indexer/knowledge-indexer.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { SharedServicesModule } from './api/shared-services/shared-services.modu
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    KnowledgeIndexerModule,
     MeModule,
     SharedServicesModule,
   ],

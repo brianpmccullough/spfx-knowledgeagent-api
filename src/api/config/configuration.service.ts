@@ -13,24 +13,21 @@ export class ConfigurationService {
       AD_TENANT_NAME: this.configService.get<string>('AD_TENANT_NAME'),
       AD_TENANT_ID: this.configService.get<string>('AD_TENANT_ID'),
       AD_CLIENT_ID: this.configService.get<string>('AD_CLIENT_ID'),
-      AZURE_OPENAI_ENDPOINT: this.configService.get<string>(
-        'AZURE_OPENAI_ENDPOINT',
-      ),
-      AZURE_OPENAI_DEPLOYMENT: this.configService.get<string>(
-        'AZURE_OPENAI_DEPLOYMENT',
-      ),
-      AZURE_OPENAI_API_VERSION: this.configService.get<string>(
-        'AZURE_OPENAI_API_VERSION',
-      ),
+      AZURE_OPENAI_ENDPOINT: this.configService.get<string>('AZURE_OPENAI_ENDPOINT'),
+      AZURE_OPENAI_DEPLOYMENT: this.configService.get<string>('AZURE_OPENAI_DEPLOYMENT'),
+      AZURE_OPENAI_API_VERSION: this.configService.get<string>('AZURE_OPENAI_API_VERSION'),
+      KNOWLEDGE_INDEXER_ENABLED:
+        this.configService.get<boolean>('KNOWLEDGE_INDEXER_ENABLED') || true,
+      KNOWLEDGE_INDEXER_INTERVAL_MS:
+        this.configService.get<number>('KNOWLEDGE_INDEXER_INTERVAL_MS') || 3600000,
+      SHAREPOINT_GEO: this.configService.get<number>('SHAREPOINT_GEO') || 'US',
     };
   }
 
   get secrets() {
     return {
       AD_CLIENT_SECRET: this.configService.get<string>('AD_CLIENT_SECRET'),
-      AZURE_OPENAI_API_KEY: this.configService.get<string>(
-        'AZURE_OPENAI_API_KEY',
-      ),
+      AZURE_OPENAI_API_KEY: this.configService.get<string>('AZURE_OPENAI_API_KEY'),
     };
   }
 }
