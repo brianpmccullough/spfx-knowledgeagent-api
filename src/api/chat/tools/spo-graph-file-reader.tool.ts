@@ -52,15 +52,21 @@ export class GraphFileReaderTool extends StructuredTool {
   }
 
   private async readPdf(driveId: string, itemId: string, name: string): Promise<string> {
+    let debug = 0;
     try {
+      console.log(driveId);
+      console.log(itemId);
       const response = await this.graphClient
         .api(`/drives/${driveId}/items/${itemId}/content`)
         .responseType('arraybuffer' as any)
         .get();
 
+      debug = 1;
       const uint8Array = new Uint8Array(response);
+      debug = 2;
       const pdfDoc = await getDocument({ data: uint8Array }).promise;
 
+      debug = 3;
       let text = '';
       for (let i = 1; i <= pdfDoc.numPages; i++) {
         const page = await pdfDoc.getPage(i);
@@ -69,9 +75,10 @@ export class GraphFileReaderTool extends StructuredTool {
         text += pageText + '\n';
       }
 
+      debug = 4;
       return this.formatContent(name, text);
     } catch (error) {
-      console.log(`Failed to read PDF: ${error.message}`);
+      console.log(`Failed to read PDF: ${debug} ${error.message}`);
       return `Failed to read PDF: ${error.message}`;
     }
   }

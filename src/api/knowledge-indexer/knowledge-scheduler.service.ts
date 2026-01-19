@@ -1,6 +1,11 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigurationService } from '../config/configuration.service';
-import { KnowledgeIndexerService, IndexerOptions } from './knowledge-indexer.service';
+import {
+  KnowledgeIndexerService,
+  IndexerOptions,
+  IndexerResult,
+} from './knowledge-indexer.service';
+import { VectorStoreService } from './vector-store.service';
 
 @Injectable()
 export class KnowledgeSchedulerService implements OnModuleInit, OnModuleDestroy {
@@ -11,6 +16,7 @@ export class KnowledgeSchedulerService implements OnModuleInit, OnModuleDestroy 
   constructor(
     private readonly configurationService: ConfigurationService,
     private readonly indexerService: KnowledgeIndexerService,
+    private readonly vectorStoreService: VectorStoreService,
   ) {}
 
   async onModuleInit() {
@@ -54,64 +60,43 @@ export class KnowledgeSchedulerService implements OnModuleInit, OnModuleDestroy 
   /**
    * Execute the indexer with concurrency protection.
    */
-  async runIndexer(options: IndexerOptions = {}): Promise<{
-    success: boolean;
-    message: string;
-    documentCount?: number;
-  }> {
+  async runIndexer(options: IndexerOptions = {}): Promise<IndexerResult> {
     if (this.isRunning) {
       this.logger.warn('Indexer already running, skipping this cycle');
-      return { success: false, message: 'Indexer is already running' };
+      return {
+        documentsFound: 0,
+        documentsProcessed: 0,
+        chunksCreated: 0,
+        errors: ['Indexer already running'],
+        durationMs: 0,
+      };
     }
 
     this.isRunning = true;
-    const startTime = Date.now();
 
     try {
-      this.logger.log('Starting knowledge indexing run...', options);
+      this.logger.log('Starting knowledge indexing run...', { options });
+      const result = await this.indexerService.runIndexingPipeline(options);
 
-      const documents = await this.indexerService.searchKnowledgeDocuments(options);
-
-      const duration = Date.now() - startTime;
+      // Log summary
       this.logger.log(
-        `Indexing run completed: ${documents.length} documents found in ${duration}ms`,
+        `Indexing complete: ${result.documentsProcessed}/${result.documentsFound} documents, ` +
+          `${result.chunksCreated} chunks, ${result.errors.length} errors, ${result.durationMs}ms`,
       );
 
-      // Log document summary
-      if (documents.length > 0) {
-        const byType = documents.reduce(
-          (acc, doc) => {
-            acc[doc.fileType] = (acc[doc.fileType] || 0) + 1;
-            return acc;
-          },
-          {} as Record<string, number>,
-        );
-
-        const bySite = documents.reduce(
-          (acc, doc) => {
-            const site = doc.siteUrl || 'unknown';
-            acc[site] = (acc[site] || 0) + 1;
-            return acc;
-          },
-          {} as Record<string, number>,
-        );
-
-        this.logger.log(`Documents by type: ${JSON.stringify(byType)}`);
-        this.logger.log(`Documents by site: ${JSON.stringify(bySite)}`);
+      if (result.errors.length > 0) {
+        this.logger.warn(`Indexing errors: ${result.errors.join('; ')}`);
       }
 
-      // TODO: Next phase - generate embeddings and store
-
-      return {
-        success: true,
-        message: `Indexing completed in ${duration}ms`,
-        documentCount: documents.length,
-      };
+      return result;
     } catch (error) {
       this.logger.error('Knowledge indexing run failed', error);
       return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Unknown error',
+        documentsFound: 0,
+        documentsProcessed: 0,
+        chunksCreated: 0,
+        errors: [error instanceof Error ? error.message : 'Unknown error'],
+        durationMs: 0,
       };
     } finally {
       this.isRunning = false;
@@ -121,17 +106,37 @@ export class KnowledgeSchedulerService implements OnModuleInit, OnModuleDestroy 
   /**
    * Manually trigger an indexing run with optional overrides.
    */
-  async triggerManualRun(options?: IndexerOptions): Promise<{
-    success: boolean;
-    message: string;
-    documentCount?: number;
-  }> {
+  async triggerManualRun(options?: IndexerOptions): Promise<IndexerResult> {
     // Merge provided options with defaults
     const mergedOptions: IndexerOptions = {
       siteUrl: options?.siteUrl,
       modifiedWithinDays: options?.modifiedWithinDays ?? 2,
+      skipEmbeddings: options?.skipEmbeddings ?? true,
     };
 
     return this.runIndexer(mergedOptions);
+  }
+
+  /**
+   * Get current index statistics.
+   */
+  async getIndexStats(): Promise<{
+    documentCount: number;
+    storageSize: number;
+    storageSizeFormatted: string;
+  }> {
+    const stats = await this.vectorStoreService.getIndexStats();
+    return {
+      ...stats,
+      storageSizeFormatted: this.formatBytes(stats.storageSize),
+    };
+  }
+
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 }

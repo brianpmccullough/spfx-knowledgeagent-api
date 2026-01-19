@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@azure/msal-node": "^3.8.4",
+    "@azure/search-documents": "^12.2.0",
     "@langchain/core": "^0.3.80",
     "@langchain/openai": "^0.6.17",
     "@microsoft/microsoft-graph-client": "^3.0.7",
@@ -31,6 +32,7 @@
     "@nestjs/platform-express": "^10.0.0",
     "langchain": "^0.3.37",
     "mammoth": "^1.11.0",
+    "openai": "^6.16.0",
     "passport": "^0.7.0",
     "passport-azure-ad": "^4.3.5",
     "pdfjs-dist": "^5.4.530",

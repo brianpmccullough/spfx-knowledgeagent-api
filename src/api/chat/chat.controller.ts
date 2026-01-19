@@ -19,6 +19,7 @@ export class ChatController {
     return {
       response: messages[messages.length - 1].content,
       messages,
+      searchMode: request.context.searchMode,
     };
   }
 }
