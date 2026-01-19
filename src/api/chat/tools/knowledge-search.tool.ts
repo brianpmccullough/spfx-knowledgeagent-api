@@ -81,7 +81,7 @@ Returns relevant excerpts from knowledge documents that the user has permission 
       }
 
       if (searchResults.length === 0) {
-        this.logger.debug('No results found in knowledge base');
+        this.logger.debug('No results found in knowledge semantic index');
         return 'No relevant information found in the knowledge base for this query.';
       }
 
