@@ -7,9 +7,6 @@ import {
 } from './knowledge-indexer.service';
 import { AzureADGuard } from 'src/auth/azure-ad.guard';
 
-/**
- * Admin controller for knowledge indexer operations.
- */
 @Controller('api/admin/knowledge-indexer')
 @UseGuards(AzureADGuard)
 export class KnowledgeIndexerController {
