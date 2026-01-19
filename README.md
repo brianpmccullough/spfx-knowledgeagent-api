@@ -1,99 +1,94 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# SPFx Knowledge Agent API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A NestJS-based backend API that powers SharePoint Online knowledge agent application. This service provides AI-powered chat capabilities, intelligent document search, document content extraction (Word/PDF/ASPX), user context, and semantic indexing.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Features
 
-## Description
+- **AI-Powered Chat**: LangChain-orchestrated chat interface with Azure OpenAI GPT-4
+- **Dual Search Modes**: RAG (vector semantic search) and KQL (keyword search) for SharePoint content
+- **Document Processing**: Extracts content from PDFs, Word documents, and SharePoint pages
+- **Enterprise Authentication**: Azure AD (Entra ID) token validation via Passport strategies
+- **Microsoft Graph Integration**: Access to SharePoint sites, files, and user profiles
+- **Knowledge Indexing**: Automated background indexing of SharePoint documents into vector database
+- **Secure Semantic Search of Knowledge**: Ability to semantically query the vector database to augment user issued queries while still respecting source document permissions.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Technology Stack
 
-## Project setup
+- **Framework**: NestJS 10 with TypeScript
+- **AI/ML**: LangChain, Azure OpenAI (GPT-4, text-embedding-3-small)
+- **Search**: Azure AI Search (vector + keyword)
+- **Auth**: [Passport](https://docs.nestjs.com/recipes/passport) with Azure AD Bearer Strategy
+- **Microsoft**: Microsoft Graph API, MSAL
+- **Document Processing**: pdfjs-dist, mammoth
 
-```bash
-$ npm install
-```
+## Quick Start
 
-## Compile and run the project
+### Prerequisites
 
-```bash
-# development
-$ npm run start
+- Node.js 18+
+- Azure AD tenant with app registration
+- Azure OpenAI resource
+- Azure AI Search instance
+- SharePoint Online tenant
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
+### Installation
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
 ```
 
-## Deployment
+### Configuration
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+Create a `.env` file in the project root with your configuration. See [docs/SETUP.md](docs/SETUP.md) for detailed configuration options.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Running
 
 ```bash
-$ npm install -g mau
-$ mau deploy
+# Development (watch mode)
+npm run start:dev
+
+# Production
+npm run build
+npm run start:prod
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+The API will start on port 3000 (or the `PORT` environment variable).
 
-## Resources
+## Documentation
 
-Check out a few resources that may come in handy when working with NestJS:
+- [Architecture Overview](docs/ARCHITECTURE.md) - System design and module interactions
+- [Setup Guide](docs/SETUP.md) - Environment configuration and prerequisites
+- [API Reference](docs/API.md) - Endpoint documentation with examples
+- [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment instructions
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Project Structure
 
-## Support
+```
+src/
+├── api/
+│   ├── chat/              # Chat endpoint with LangChain agent and tools
+│   ├── config/            # Configuration service
+│   ├── knowledge-indexer/ # Document indexing pipeline
+│   ├── me/                # User profile endpoint
+│   └── shared-services/   # Microsoft Graph services
+├── auth/                  # Azure AD authentication
+├── app.module.ts          # Root module
+└── main.ts                # Application entry point
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## Scripts
 
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+| Command | Description |
+|---------|-------------|
+| `npm run start:dev` | Start in development mode with hot reload |
+| `npm run start:debug` | Start with debugger attached |
+| `npm run build` | Build for production |
+| `npm run start:prod` | Run production build |
+| `npm run test` | Run unit tests |
+| `npm run test:e2e` | Run end-to-end tests |
+| `npm run lint` | Lint and fix code |
+| `npm run format` | Format code with Prettier |
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+This project is provided as a sample/reference implementation.
