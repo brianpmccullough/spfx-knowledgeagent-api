@@ -32,6 +32,7 @@
     "@nestjs/platform-express": "^10.0.0",
     "langchain": "^0.3.37",
     "mammoth": "^1.11.0",
+    "markitdown-js": "^0.0.14",
     "openai": "^6.16.0",
     "passport": "^0.7.0",
     "passport-azure-ad": "^4.3.5",

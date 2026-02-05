@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './api/chat/chat.module';
 import { SharedServicesModule } from './api/shared-services/shared-services.module';
 import { KnowledgeIndexerModule } from './api/knowledge-indexer/knowledge-indexer.module';
+import { ExtractionModule } from './api/extraction/extraction.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { KnowledgeIndexerModule } from './api/knowledge-indexer/knowledge-indexe
     }),
     KnowledgeIndexerModule,
     MeModule,
+    ExtractionModule,
     SharedServicesModule,
   ],
   controllers: [AppController],
