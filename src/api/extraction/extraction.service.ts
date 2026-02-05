@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Client } from '@microsoft/microsoft-graph-client';
+import { AzureChatOpenAI } from '@langchain/openai';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -8,6 +9,8 @@ import {
   MetadataExtractionRequest,
   MetadataExtractionResponse,
   MetadataFieldResult,
+  MetadataFieldDefinition,
+  ConfidenceLevel,
   TextExtractionRequest,
   TextExtractionResponse,
   TextOutputFormat,
@@ -18,13 +21,38 @@ import {
 } from './models';
 import { AuthenticatedUser } from '../../auth/authenticateduser';
 import { OboGraphService } from '../shared-services/obo-graph.service';
+import { ConfigurationService } from '../config/configuration.service';
+
+interface ExtractedField {
+  fieldName: string;
+  value: string | number | boolean | null;
+  confidence: 'green' | 'yellow' | 'red';
+  reasoning: string;
+}
+
+interface ExtractedMetadata {
+  fields: ExtractedField[];
+}
 
 @Injectable()
 export class ExtractionService {
   private readonly logger = new Logger(ExtractionService.name);
   private readonly markitdown = new Markitdown();
+  private readonly llm: AzureChatOpenAI;
 
-  constructor(private readonly oboGraphService: OboGraphService) {}
+  constructor(
+    private readonly oboGraphService: OboGraphService,
+    private readonly configurationService: ConfigurationService,
+  ) {
+    const { configuration, secrets } = this.configurationService;
+    this.llm = new AzureChatOpenAI({
+      azureOpenAIEndpoint: configuration.AZURE_OPENAI_ENDPOINT,
+      azureOpenAIApiKey: secrets.AZURE_OPENAI_API_KEY,
+      azureOpenAIApiDeploymentName: configuration.AZURE_OPENAI_DEPLOYMENT,
+      azureOpenAIApiVersion: configuration.AZURE_OPENAI_API_VERSION,
+      temperature: 0, // Low temperature for consistent extraction
+    });
+  }
 
   /**
    * Extract metadata from a document based on the provided field definitions.
@@ -41,21 +69,151 @@ export class ExtractionService {
       `Extracting metadata for document (${docLocation}) - ${request.fields.length} fields requested`,
     );
 
-    // TODO: Implement LLM-based metadata extraction using extractText
-    // const textResult = await this.extractText({ document: request.document }, 'markdown', user);
-    // const extractedMetadata = await this.extractWithLlm(textResult.content, request.fields);
+    // First extract text from the document
+    const textResult = await this.extractText({ document: request.document }, 'markdown', user);
 
-    // Stub response - returns placeholder results for each requested field
-    const results: MetadataFieldResult[] = request.fields.map((field) => ({
-      fieldName: field.title,
-      confidence: 'red' as const,
-      value: null,
-    }));
+    if (!textResult.content || textResult.content.trim().length === 0) {
+      // Return red confidence for all fields if no content
+      return {
+        document: request.document,
+        results: request.fields.map((field) => ({
+          fieldName: field.title,
+          confidence: 'red' as ConfidenceLevel,
+          value: null,
+        })),
+      };
+    }
+
+    // Extract metadata using LLM
+    const extractedMetadata = await this.extractWithLlm(textResult.content, request.fields);
+
+    // Map LLM results to response format, ensuring type conversion
+    const results: MetadataFieldResult[] = request.fields.map((field) => {
+      const extracted = extractedMetadata.fields.find((f) => f.fieldName === field.title);
+
+      if (!extracted) {
+        return {
+          fieldName: field.title,
+          confidence: 'red' as ConfidenceLevel,
+          value: null,
+        };
+      }
+
+      // Convert value to expected data type
+      const convertedValue = this.convertValue(extracted.value, field.dataType);
+
+      return {
+        fieldName: field.title,
+        confidence: extracted.confidence as ConfidenceLevel,
+        value: convertedValue,
+      };
+    });
 
     return {
       document: request.document,
       results,
     };
+  }
+
+  /**
+   * Use LLM to extract metadata fields from document content.
+   */
+  private async extractWithLlm(
+    documentContent: string,
+    fields: MetadataFieldDefinition[],
+  ): Promise<ExtractedMetadata> {
+    // Build field descriptions for the prompt
+    const fieldDescriptions = fields
+      .map(
+        (f) =>
+          `- **${f.title}** (${f.dataType}): ${f.description}`,
+      )
+      .join('\n');
+
+    const systemPrompt = `You are a document metadata extraction assistant. Your task is to extract specific metadata fields from document content.
+
+For each requested field:
+1. Search the document content carefully for relevant information
+2. Extract the value if found, converting to the requested data type
+3. Assess your confidence:
+   - **green**: Value is clearly and explicitly stated in the document
+   - **yellow**: Value is inferred, partially found, or requires interpretation
+   - **red**: Value is not found, or you would be guessing
+4. Provide brief reasoning for your extraction
+
+Be precise and avoid making assumptions. If information is not clearly present, mark confidence as red and set value to null.`;
+
+    const userPrompt = `## Document Content
+
+${documentContent}
+
+## Fields to Extract
+
+${fieldDescriptions}
+
+Extract the requested fields from the document content above. Return a JSON object with the extracted values.`;
+
+    try {
+      // Use JSON mode for structured output
+      const jsonLlm = this.llm.bind({
+        response_format: { type: 'json_object' },
+      });
+
+      const response = await jsonLlm.invoke([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ]);
+
+      // Parse JSON from response
+      const content = typeof response.content === 'string' ? response.content : '';
+      const result = JSON.parse(content) as ExtractedMetadata;
+
+      this.logger.debug(`LLM extraction result: ${JSON.stringify(result)}`);
+
+      return result;
+    } catch (error) {
+      this.logger.error('LLM extraction failed', error);
+
+      // Return empty results on error
+      return {
+        fields: fields.map((f) => ({
+          fieldName: f.title,
+          value: null,
+          confidence: 'red' as const,
+          reasoning: 'Extraction failed due to an error',
+        })),
+      };
+    }
+  }
+
+  /**
+   * Convert extracted value to the expected data type.
+   */
+  private convertValue(
+    value: string | number | boolean | null,
+    dataType: string,
+  ): string | number | boolean | null {
+    if (value === null) return null;
+
+    switch (dataType) {
+      case 'string':
+        return String(value);
+
+      case 'number':
+        if (typeof value === 'number') return value;
+        const parsed = parseFloat(String(value));
+        return isNaN(parsed) ? null : parsed;
+
+      case 'boolean':
+        if (typeof value === 'boolean') return value;
+        const strValue = String(value).toLowerCase();
+        if (['true', 'yes', '1'].includes(strValue)) return true;
+        if (['false', 'no', '0'].includes(strValue)) return false;
+        return null;
+
+      default:
+        return value;
+    }
   }
 
   /**
@@ -212,7 +370,9 @@ export class ExtractionService {
       }
     }
 
-    throw new Error(`Unable to resolve path: ${documentPath}. Use full URL or driveId/driveItemId.`);
+    throw new Error(
+      `Unable to resolve path: ${documentPath}. Use full URL or driveId/driveItemId.`,
+    );
   }
 
   /**
