@@ -91,6 +91,7 @@ export class ExtractionController {
     @Query('format') format: TextOutputFormat = 'markdown',
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<TextExtractionResponse> {
+    console.log(request);
     const validFormat = format === 'text' ? 'text' : 'markdown';
     return this.extractionService.extractText(request, validFormat, user);
   }

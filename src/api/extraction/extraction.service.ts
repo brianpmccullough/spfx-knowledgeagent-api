@@ -1,10 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { Client } from '@microsoft/microsoft-graph-client';
 import { AzureChatOpenAI } from '@langchain/openai';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import Markitdown from 'markitdown-js';
+import Markitdown, { DocumentConverter } from 'markitdown-js';
+import DocumentIntelligence, {
+  getLongRunningPoller,
+  isUnexpected,
+} from '@azure-rest/ai-document-intelligence';
+import { AzureKeyCredential } from '@azure/core-auth';
 import {
   MetadataExtractionRequest,
   MetadataExtractionResponse,
@@ -23,6 +28,61 @@ import { AuthenticatedUser } from '../../auth/authenticateduser';
 import { OboGraphService } from '../shared-services/obo-graph.service';
 import { ConfigurationService } from '../config/configuration.service';
 
+const DOCINTEL_EXTENSIONS = [
+  '.pdf', '.docx', '.xlsx', '.pptx', '.html',
+  '.jpeg', '.jpg', '.png', '.bmp', '.tiff', '.heif',
+];
+
+const OFFICE_EXTENSIONS = ['.xlsx', '.pptx', '.html', '.docx'];
+
+/**
+ * Custom Document Intelligence converter that uses AzureKeyCredential
+ * instead of DefaultAzureCredential (which the built-in one hardcodes).
+ */
+class DocIntelKeyConverter extends DocumentConverter {
+  private client: ReturnType<typeof DocumentIntelligence>;
+
+  constructor(client: ReturnType<typeof DocumentIntelligence>) {
+    super();
+    this.client = client;
+  }
+
+  async convert(localPath: string, options: any) {
+    const extension: string = options.fileExtension || '';
+    if (!DOCINTEL_EXTENSIONS.includes(extension.toLowerCase())) {
+      return null;
+    }
+
+    const base64Source = fs.readFileSync(localPath, { encoding: 'base64' });
+    const analysisFeatures = OFFICE_EXTENSIONS.includes(extension.toLowerCase())
+      ? []
+      : ['formulas', 'ocrHighResolution', 'styleFont'];
+
+    const initialResponse = await this.client
+      .path('/documentModels/{modelId}:analyze', 'prebuilt-layout')
+      .post({
+        contentType: 'application/json',
+        body: { base64Source },
+        queryParameters: {
+          outputContentFormat: 'markdown',
+          ...(analysisFeatures.length ? { features: analysisFeatures } : {}),
+        },
+      });
+
+    if (isUnexpected(initialResponse)) {
+      throw (initialResponse as any).body.error;
+    }
+
+    const poller = getLongRunningPoller(this.client, initialResponse);
+    const result = (await poller.pollUntilDone()).body;
+    const markdownText =
+      (result as any).analyzeResult?.content ||
+      `\n## Document Data:\nError. Could not generate data because api ended with status ${(result as any).status}.`;
+
+    return { title: null, textContent: markdownText };
+  }
+}
+
 interface ExtractedField {
   fieldName: string;
   value: string | number | boolean | null;
@@ -37,7 +97,7 @@ interface ExtractedMetadata {
 @Injectable()
 export class ExtractionService {
   private readonly logger = new Logger(ExtractionService.name);
-  private readonly markitdown = new Markitdown();
+  private readonly markitdown: Markitdown;
   private readonly llm: AzureChatOpenAI;
 
   constructor(
@@ -45,6 +105,37 @@ export class ExtractionService {
     private readonly configurationService: ConfigurationService,
   ) {
     const { configuration, secrets } = this.configurationService;
+
+    // Use Azure Document Intelligence for higher-quality extraction when enabled
+    this.markitdown = new Markitdown();
+
+    if (configuration.AZURE_DOCINTEL_ENABLED && configuration.AZURE_DOCINTEL_ENDPOINT) {
+      if (configuration.AZURE_DOCINTEL_AUTH === 'identity') {
+        // Use DefaultAzureCredential (az login / managed identity)
+        this.markitdown = new Markitdown({
+          docintelEndpoint: configuration.AZURE_DOCINTEL_ENDPOINT,
+        });
+      } else {
+        // Use API key — register a custom converter since the built-in one hardcodes DefaultAzureCredential
+        const apiKey = secrets.AZURE_DOCINTEL_KEY;
+        if (!apiKey) {
+          this.logger.warn(
+            'AZURE_DOCINTEL_ENABLED is true with auth=key but AZURE_DOCINTEL_KEY is not set — falling back to default extraction',
+          );
+        } else {
+          const client = DocumentIntelligence(
+            configuration.AZURE_DOCINTEL_ENDPOINT,
+            new AzureKeyCredential(apiKey),
+          );
+          const converter = new DocIntelKeyConverter(client);
+          this.markitdown.registerConverter(converter);
+        }
+      }
+    }
+
+    this.logger.log(
+      `Markitdown initialized ${configuration.AZURE_DOCINTEL_ENABLED ? 'with' : 'without'} Azure Document Intelligence (auth: ${configuration.AZURE_DOCINTEL_AUTH})`,
+    );
     this.llm = new AzureChatOpenAI({
       azureOpenAIEndpoint: configuration.AZURE_OPENAI_ENDPOINT,
       azureOpenAIApiKey: secrets.AZURE_OPENAI_API_KEY,
@@ -61,6 +152,10 @@ export class ExtractionService {
     request: MetadataExtractionRequest,
     user: AuthenticatedUser,
   ): Promise<MetadataExtractionResponse> {
+    if (!request.fields || !Array.isArray(request.fields)) {
+      throw new BadRequestException('Missing required "fields" array in request body');
+    }
+
     const docLocation = isPathLocation(request.document)
       ? `path: ${request.document.path}`
       : `driveId: ${request.document.driveId}, driveItemId: ${request.document.driveItemId}`;
@@ -141,7 +236,19 @@ For each requested field:
    - **red**: Value is not found, or you would be guessing
 4. Provide brief reasoning for your extraction
 
-Be precise and avoid making assumptions. If information is not clearly present, mark confidence as red and set value to null.`;
+Be precise and avoid making assumptions. If information is not clearly present, mark confidence as red and set value to null.
+
+You MUST return a JSON object with this exact structure:
+{
+  "fields": [
+    {
+      "fieldName": "FieldTitle",
+      "value": "extracted value or null",
+      "confidence": "green|yellow|red",
+      "reasoning": "brief explanation"
+    }
+  ]
+}`;
 
     const userPrompt = `## Document Content
 
@@ -166,11 +273,25 @@ Extract the requested fields from the document content above. Return a JSON obje
 
       // Parse JSON from response
       const content = typeof response.content === 'string' ? response.content : '';
-      const result = JSON.parse(content) as ExtractedMetadata;
+      const parsed = JSON.parse(content);
 
-      this.logger.debug(`LLM extraction result: ${JSON.stringify(result)}`);
+      this.logger.debug(`LLM extraction result: ${JSON.stringify(parsed)}`);
 
-      return result;
+      // Handle case where LLM returns fields as object keys instead of array
+      if (!parsed.fields || !Array.isArray(parsed.fields)) {
+        // Transform object format to expected array format
+        const transformedFields: ExtractedField[] = Object.entries(parsed).map(
+          ([key, val]: [string, any]) => ({
+            fieldName: key,
+            value: val?.value ?? null,
+            confidence: val?.confidence ?? 'red',
+            reasoning: val?.reasoning ?? '',
+          }),
+        );
+        return { fields: transformedFields };
+      }
+
+      return parsed as ExtractedMetadata;
     } catch (error) {
       this.logger.error('LLM extraction failed', error);
 
@@ -259,13 +380,30 @@ Extract the requested fields from the document content above. Return a JSON obje
     try {
       // Determine file extension and download URL
       const { downloadUrl, extension } = await this.getDownloadInfo(document, graphClient);
+      this.logger.debug(`Download URL: ${downloadUrl}`);
       tempFilePath = path.join(tempDir, `${tempFileName}.${extension}`);
 
       // Download file content
-      const content = await graphClient
-        .api(downloadUrl)
-        .responseType('arraybuffer' as any)
-        .get();
+      let content: ArrayBuffer;
+      try {
+        content = await graphClient
+          .api(downloadUrl)
+          .responseType('arraybuffer' as any)
+          .get();
+      } catch (downloadError: any) {
+        // Extract detailed error info from Graph API response
+        const errorDetails = {
+          message: downloadError.message,
+          code: downloadError.code,
+          statusCode: downloadError.statusCode,
+          body: downloadError.body,
+          requestId: downloadError.requestId,
+        };
+        this.logger.error(`Graph API download failed: ${JSON.stringify(errorDetails, null, 2)}`);
+        throw new Error(
+          `Failed to download document: ${downloadError.code || downloadError.message || 'Unknown error'}`,
+        );
+      }
 
       // Convert response to Buffer
       const buffer = this.toBuffer(content);
@@ -278,6 +416,9 @@ Extract the requested fields from the document content above. Return a JSON obje
 
       // Convert using markitdown-js
       const result = await this.markitdown.convert(tempFilePath);
+
+      this.logger.debug(`Markitdown result - title: ${result.title}, content length: ${result.textContent?.length || 0}`);
+      this.logger.debug(`First 500 chars: ${result.textContent?.substring(0, 500)}`);
 
       return result.textContent || '';
     } catch (error) {
@@ -319,9 +460,13 @@ Extract the requested fields from the document content above. Return a JSON obje
       // Parse the SharePoint path
       const extension = this.getExtension(document.path);
 
-      // Handle server-relative paths (e.g., /sites/MySite/Shared Documents/doc.docx)
-      // Convert to Graph API format
-      const downloadUrl = await this.resolvePathToDownloadUrl(document.path, graphClient);
+      // Use Graph search to find driveId and driveItemId
+      const { driveId, driveItemId } = await this.resolvePathToDriveInfo(
+        document.path,
+        graphClient,
+      );
+
+      const downloadUrl = `/drives/${driveId}/items/${driveItemId}/content`;
 
       return { downloadUrl, extension };
     }
@@ -330,49 +475,80 @@ Extract the requested fields from the document content above. Return a JSON obje
   }
 
   /**
-   * Resolve a SharePoint path to a Graph API download URL.
+   * Resolve a SharePoint path to driveId and driveItemId using Graph search.
    */
-  private async resolvePathToDownloadUrl(
+  private async resolvePathToDriveInfo(
     documentPath: string,
     graphClient: Client,
-  ): Promise<string> {
-    // Handle full URLs
-    if (documentPath.startsWith('http://') || documentPath.startsWith('https://')) {
-      const url = new URL(documentPath);
-      const hostname = url.hostname;
-      const pathname = url.pathname;
+  ): Promise<{ driveId: string; driveItemId: string }> {
+    // Extract filename from path for search
+    const filename = documentPath.split('/').pop() || '';
 
-      // Use SharePoint sites API with path
-      return `/sites/${hostname}:${pathname}:/content`;
-    }
+    this.logger.debug(`Searching for file: ${filename}`);
 
-    // Handle server-relative paths (e.g., /sites/MySite/Shared Documents/doc.docx)
-    // We need to figure out the site from the path
-    const pathParts = documentPath.split('/').filter(Boolean);
-    const sitesIndex = pathParts.indexOf('sites');
+    // Use Graph search to find the file by path
+    const searchRequest = {
+      requests: [
+        {
+          entityTypes: ['driveItem'],
+          query: {
+            queryString: `path:"${documentPath}" OR filename:"${filename}"`,
+          },
+          from: 0,
+          size: 10,
+          fields: ['id', 'name', 'webUrl', 'parentReference'],
+        },
+      ],
+    };
 
-    if (sitesIndex !== -1 && pathParts.length > sitesIndex + 1) {
-      const siteName = pathParts[sitesIndex + 1];
-      const remainingPath = '/' + pathParts.slice(sitesIndex + 2).join('/');
+    try {
+      const response = await graphClient.api('/search/query').post(searchRequest);
 
-      // Get the site to find the hostname
-      // This assumes default tenant - may need configuration
-      const sites = await graphClient
-        .api('/sites')
-        .filter(`displayName eq '${siteName}'`)
-        .select('id,webUrl')
-        .top(1)
-        .get();
+      const hits = response.value?.[0]?.hitsContainers?.[0]?.hits || [];
 
-      if (sites.value && sites.value.length > 0) {
-        const siteId = sites.value[0].id;
-        return `/sites/${siteId}/drive/root:${remainingPath}:/content`;
+      this.logger.debug(`Search returned ${hits.length} results`);
+
+      // Find the matching file by comparing URLs
+      for (const hit of hits) {
+        const resource = hit.resource;
+        const webUrl = resource.webUrl || '';
+
+        this.logger.debug(`Checking: ${webUrl}`);
+
+        // Compare URLs (normalize for comparison)
+        const normalizedPath = decodeURIComponent(documentPath).toLowerCase();
+        const normalizedWebUrl = decodeURIComponent(webUrl).toLowerCase();
+
+        if (normalizedWebUrl === normalizedPath || normalizedWebUrl.includes(normalizedPath)) {
+          const driveId = resource.parentReference?.driveId;
+          const driveItemId = resource.id;
+
+          if (driveId && driveItemId) {
+            this.logger.debug(`Found file - driveId: ${driveId}, driveItemId: ${driveItemId}`);
+            return { driveId, driveItemId };
+          }
+        }
       }
-    }
 
-    throw new Error(
-      `Unable to resolve path: ${documentPath}. Use full URL or driveId/driveItemId.`,
-    );
+      // If exact match not found but we have results, use the first one with matching filename
+      for (const hit of hits) {
+        const resource = hit.resource;
+        if (resource.name === filename) {
+          const driveId = resource.parentReference?.driveId;
+          const driveItemId = resource.id;
+
+          if (driveId && driveItemId) {
+            this.logger.debug(`Found by filename - driveId: ${driveId}, driveItemId: ${driveItemId}`);
+            return { driveId, driveItemId };
+          }
+        }
+      }
+
+      throw new Error(`File not found in search results: ${documentPath}`);
+    } catch (error: any) {
+      this.logger.error(`Graph search failed: ${error.message || error}`);
+      throw new Error(`Unable to find file: ${documentPath}`);
+    }
   }
 
   /**

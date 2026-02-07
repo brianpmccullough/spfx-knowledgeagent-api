@@ -27,6 +27,10 @@ export class ConfigurationService {
         this.configService.get<number>('KNOWLEDGE_INDEXER_INTERVAL_MS') || 3600000,
       SHAREPOINT_GEO: this.configService.get<number>('SHAREPOINT_GEO') || 'US',
       DEFAULT_SEARCH_MODE: this.configService.get<number>('DEFAULT_SEARCH_MODE') || 'kql',
+      AZURE_DOCINTEL_ENABLED:
+        this.configService.get<string>('AZURE_DOCINTEL_ENABLED')?.toLowerCase() === 'true',
+      AZURE_DOCINTEL_ENDPOINT: this.configService.get<string>('AZURE_DOCINTEL_ENDPOINT'),
+      AZURE_DOCINTEL_AUTH: this.configService.get<string>('AZURE_DOCINTEL_AUTH') || 'key',
     };
   }
 
@@ -35,6 +39,7 @@ export class ConfigurationService {
       AD_CLIENT_SECRET: this.configService.get<string>('AD_CLIENT_SECRET'),
       AZURE_OPENAI_API_KEY: this.configService.get<string>('AZURE_OPENAI_API_KEY'),
       AZURE_SEARCH_ADMIN_KEY: this.configService.get<string>('AZURE_SEARCH_ADMIN_KEY'),
+      AZURE_DOCINTEL_KEY: this.configService.get<string>('AZURE_DOCINTEL_KEY'),
     };
   }
 }
