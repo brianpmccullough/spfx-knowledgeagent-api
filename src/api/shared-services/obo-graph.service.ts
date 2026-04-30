@@ -33,4 +33,14 @@ export class OboGraphService {
       },
     });
   }
+
+  async getSharePointToken(userToken: string, siteUrl: string): Promise<string> {
+    const host = new URL(siteUrl).origin;
+    const oboRequest = {
+      oboAssertion: userToken,
+      scopes: [`${host}/.default`],
+    };
+    const tokenResponse = await this.msalClient.acquireTokenOnBehalfOf(oboRequest);
+    return tokenResponse.accessToken;
+  }
 }
