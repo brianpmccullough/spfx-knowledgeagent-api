@@ -15,8 +15,8 @@ import {
 
 const SPO_FILE_STATUS_MAP: Record<number, TranslationFileStatus> = {
   0: 'none',
-  1: 'draft',
-  2: 'published',
+  1: 'published',
+  2: 'draft',
 };
 
 @Injectable()
@@ -62,10 +62,13 @@ export class TranslationService {
       `${request.siteUrl}/_api/sitepages/pages(${request.pageId})` +
       `?$select=Path,Version,Translations&$expand=Translations`;
 
+    console.log(apiUrl);
+
     const response = await fetch(apiUrl, {
       headers: {
         Authorization: `Bearer ${token}`,
-        Accept: 'application/json;odata=nometadata',
+        Accept: 'application/json;odata.metadata=minimal',
+        'odata-version': '4.0',
       },
     });
 
@@ -77,9 +80,12 @@ export class TranslationService {
 
     const data = (await response.json()) as SpoPageResponse;
 
+    console.log(data);
+    console.log(data.Translations.Items);
+
     const translations: TranslationStatusItem[] = (data.Translations?.Items ?? []).map((item) => ({
       language: item.Culture,
-      path: item.Path,
+      path: item.Path?.DecodedUrl,
       fileStatus: SPO_FILE_STATUS_MAP[item.FileStatus] ?? 'none',
       hasPublishedVersion: item.HasPublishedVersion,
     }));
@@ -87,10 +93,10 @@ export class TranslationService {
     return {
       siteUrl: request.siteUrl,
       pageId: request.pageId,
-      path: data.Path,
+      path: data.Path?.DecodedUrl,
       version: data.Version,
       translations,
-      untranslatedLanguages: data.Translations?.UntranslatedLanguageCodes ?? [],
+      untranslatedLanguages: data.Translations?.UntranslatedLanguages ?? [],
     };
   }
 

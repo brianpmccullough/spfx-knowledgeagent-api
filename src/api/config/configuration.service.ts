@@ -22,7 +22,7 @@ export class ConfigurationService {
       AZURE_SEARCH_ENDPOINT: this.configService.get<string>('AZURE_SEARCH_ENDPOINT'),
       AZURE_SEARCH_INDEX_NAME: this.configService.get<string>('AZURE_SEARCH_INDEX_NAME'),
       KNOWLEDGE_INDEXER_ENABLED:
-        this.configService.get<boolean>('KNOWLEDGE_INDEXER_ENABLED') || true,
+        this.configService.get<string>('KNOWLEDGE_INDEXER_ENABLED')?.toLowerCase() !== 'false',
       KNOWLEDGE_INDEXER_INTERVAL_MS:
         this.configService.get<number>('KNOWLEDGE_INDEXER_INTERVAL_MS') || 3600000,
       SHAREPOINT_GEO: this.configService.get<number>('SHAREPOINT_GEO') || 'US',

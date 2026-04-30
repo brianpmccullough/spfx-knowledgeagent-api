@@ -54,21 +54,24 @@ export interface TranslationStatusResponse {
 }
 
 // ── SharePoint REST API raw shapes (internal) ─────────────────────────────────
+export interface SpoPagePath {
+  DecodedUrl: string;
+}
 
 export interface SpoPageTranslationItem {
   Culture: string;
-  Path: string;
+  Path: SpoPagePath;
   FileStatus: number; // 0 = none, 1 = draft, 2 = published
   HasPublishedVersion: boolean;
 }
 
 export interface SpoTranslationsPayload {
   Items: SpoPageTranslationItem[];
-  UntranslatedLanguageCodes: string[];
+  UntranslatedLanguages: string[];
 }
 
 export interface SpoPageResponse {
-  Path: string;
+  Path: SpoPagePath;
   Version: string;
   Translations: SpoTranslationsPayload;
 }
